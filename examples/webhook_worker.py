@@ -10,6 +10,7 @@ import logging
 import signal
 import sys
 import requests
+from typing import Tuple
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -44,7 +45,7 @@ def signal_handler(sig, frame):
     shutdown_requested = True
 
 
-def deliver_webhook(url: str, payload: dict) -> tuple[int, str]:
+def deliver_webhook(url: str, payload: dict) -> Tuple[int, str]:
     """
     Deliver a webhook via HTTP POST.
     

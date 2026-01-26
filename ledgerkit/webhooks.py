@@ -8,7 +8,7 @@ Features:
 - Worker integration helpers
 """
 
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, List, Tuple
 from datetime import datetime, timedelta
 from decimal import Decimal
 import logging
@@ -98,7 +98,7 @@ class WebhookManager:
             session.refresh(webhook)
             return webhook
 
-    def get_pending_webhooks(self, limit: int = 100) -> list[WebhookDelivery]:
+    def get_pending_webhooks(self, limit: int = 100) -> List[WebhookDelivery]:
         """
         Get webhooks that are ready for delivery.
         
@@ -191,7 +191,7 @@ class WebhookManager:
 
     def process_pending_webhooks(
         self,
-        deliver_func: Callable[[str, Dict[str, Any]], tuple[int, str]],
+        deliver_func: Callable[[str, Dict[str, Any]], Tuple[int, str]],
         limit: int = 100,
     ) -> int:
         """
