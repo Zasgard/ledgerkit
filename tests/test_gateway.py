@@ -445,10 +445,7 @@ class TestConfirmToLedger:
         )
         from sqlalchemy import select
         from ledgerkit.models import Entry
-        from sqlalchemy.orm import sessionmaker
-        from sqlalchemy import create_engine
 
-        engine = create_engine("sqlite:///:memory:")
         # Query through the ledger's session
         with ledger.Session() as session:
             entry = session.scalar(
