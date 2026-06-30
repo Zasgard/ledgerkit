@@ -1,0 +1,145 @@
+"""
+Segpay payment driver.
+
+Uses the Segpay REST API to process transactions.
+Credentials required:
+    api_key    – Segpay API key
+    package_id – Segpay package / price-point ID
+
+API reference: https://segpay.com/api-docs
+"""
+
+from decimal import Decimal
+from typing import Any, Dict
+
+import requests
+
+from ledgerkit.drivers.base import BasePaymentDriver, DriverError, PaymentResult
+
+_BASE_URL = "https://api.segpay.com/v1"
+
+
+class SegpayDriver(BasePaymentDriver):
+    """Segpay REST API driver."""
+
+    name = "segpay"
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": "Bearer " + str(self.credentials.get("api_key", "")),
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    def charge(
+        self,
+        amount: Decimal,
+        currency: str,
+        payment_method: Dict[str, Any],
+        idempotency_key: str,
+        **kwargs: Any,
+    ) -> PaymentResult:
+        payload: Dict[str, Any] = {
+            "packageId": str(self.credentials.get("package_id", "")),
+            "price": str(amount),
+            "currency": currency.upper(),
+            "referenceId": idempotency_key,
+            "cardNumber": payment_method.get("card_number", ""),
+            "cardExpireMonth": str(payment_method.get("exp_month", "")),
+            "cardExpireYear": str(payment_method.get("exp_year", "")),
+            "cardCvv": str(payment_method.get("cvv", "")),
+            "cardholderName": payment_method.get("name", ""),
+            "billingAddress": payment_method.get("address1", ""),
+            "billingCity": payment_method.get("city", ""),
+            "billingState": payment_method.get("state", ""),
+            "billingZip": payment_method.get("zip", ""),
+            "billingCountry": payment_method.get("country", "US"),
+            "email": payment_method.get("email", ""),
+        }
+        payload.update(kwargs)
+
+        try:
+            resp = requests.post(
+                f"{_BASE_URL}/purchase",
+                json=payload,
+                headers=self._headers(),
+                timeout=30,
+            )
+            body: Dict[str, Any] = resp.json()
+        except Exception as exc:
+            raise DriverError(f"Segpay charge request failed: {exc}") from exc
+
+        success = resp.status_code in (200, 201) and body.get("status") == "approved"
+        return PaymentResult(
+            success=success,
+            transaction_id=str(body["transactionId"]) if success and "transactionId" in body else None,
+            amount=amount,
+            currency=currency,
+            driver_name=self.name,
+            raw_response=body,
+            error=None if success else (body.get("message") or "Charge declined"),
+            error_code=str(body.get("errorCode", "")) if not success else None,
+        )
+
+    def refund(
+        self,
+        transaction_id: str,
+        amount: Decimal,
+        idempotency_key: str,
+        **kwargs: Any,
+    ) -> PaymentResult:
+        payload: Dict[str, Any] = {
+            "transactionId": transaction_id,
+            "amount": str(amount),
+            "referenceId": idempotency_key,
+        }
+        payload.update(kwargs)
+
+        try:
+            resp = requests.post(
+                f"{_BASE_URL}/refund",
+                json=payload,
+                headers=self._headers(),
+                timeout=30,
+            )
+            body = resp.json()
+        except Exception as exc:
+            raise DriverError(f"Segpay refund request failed: {exc}") from exc
+
+        success = resp.status_code in (200, 201) and body.get("status") == "approved"
+        return PaymentResult(
+            success=success,
+            transaction_id=transaction_id,
+            amount=amount,
+            currency=kwargs.get("currency", "USD"),
+            driver_name=self.name,
+            raw_response=body,
+            error=None if success else (body.get("message") or "Refund failed"),
+        )
+
+    def verify(
+        self,
+        transaction_id: str,
+        **kwargs: Any,
+    ) -> PaymentResult:
+        try:
+            resp = requests.get(
+                f"{_BASE_URL}/transactions/{transaction_id}",
+                headers=self._headers(),
+                timeout=15,
+            )
+            body = resp.json()
+        except Exception as exc:
+            raise DriverError(f"Segpay verify request failed: {exc}") from exc
+
+        success = resp.status_code == 200 and body.get("status") in ("approved", "settled")
+        amount_raw = body.get("price") or body.get("amount") or "0"
+        return PaymentResult(
+            success=success,
+            transaction_id=transaction_id if success else None,
+            amount=Decimal(str(amount_raw)),
+            currency=body.get("currency", "USD"),
+            driver_name=self.name,
+            raw_response=body,
+            error=None if success else (body.get("message") or "Transaction not found"),
+        )
